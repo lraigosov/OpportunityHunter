@@ -1,0 +1,8 @@
+pydantic>=2.7,<3
+requests>=2.31,<3
+orjson>=3.10,<4
+pandas>=2.2,<3
+scikit-learn>=1.5,<2
+python-dateutil>=2.9,<3
+click>=8.1,<9
+schedule>=1.2,<2

@@ -1,0 +1,61 @@
+{
+  "sources": {
+    "secop2": {
+      "enabled": true,
+      "mode": "offline",
+      "sample_file": "data/samples/secop2_sample.jsonl",
+      "endpoint": "https://www.datos.gov.co/resource/p6dx-8zbt.json",
+      "limit": 50
+    },
+    "chilecompra": {
+      "enabled": false,
+      "mode": "online",
+      "sample_file": "data/samples/chilecompra_sample.jsonl",
+      "endpoint": "https://www.mercadopublico.cl/Procurement/Modules/RFB/SearchProcurement.aspx",
+      "limit": 50
+    },
+    "compranet": {
+      "enabled": false,
+      "mode": "online",
+      "sample_file": "data/samples/compranet_sample.jsonl",
+      "endpoint": "https://datos.gob.mx/busca/api/3/action/package_list",
+      "query": "compranet",
+      "limit": 20
+    }
+  },
+  "filters": {
+    "keywords": ["software", "servicios", "consultoría"],
+    "countries": ["CO", "CL", "MX"],
+    "min_amount": 0,
+    "max_amount": 1000000000,
+    "cpv_codes": [],
+    "buyer_names": [],
+    "date_from": null,
+    "date_to": null,
+    "days_back": 120
+  },
+  "alerts": {
+    "enabled": true,
+    "notify": ["console", "file"],
+    "file_path": "data/alerts.log"
+  },
+  "analysis": {
+    "price_trend": { "window_days": 180, "group_by": ["item_code", "country"] },
+    "anomaly": { "method": "zscore", "z": 3.0, "min_points": 10 },
+    "collusion": { "method": "simple", "min_bidders": 3, "similarity_threshold": 0.95 }
+  },
+  "persistence": {
+    "enabled": false,
+    "directory": "data/executions",
+    "cleanup_days": 30,
+    "format": "json"
+  },
+  "temporal": {
+    "enabled": false,
+    "date_from": null,
+    "date_to": null,
+    "days_back": 30,
+    "interval": "monthly"
+  },
+  "scheduler": { "enabled": false, "every_minutes": 60 }
+}
