@@ -4,6 +4,8 @@
 
 OpportunityHunter es una plataforma avanzada que analiza procesos de contratación pública de múltiples países (Colombia, Chile, México) para generar alertas automáticas de oportunidades, detectar anomalías en precios y identificar patrones de colusión.
 
+Nota: PR de validación de reglas de protección de rama.
+
 ## 🚀 Características Principales
 
 ### Análisis Inteligente
