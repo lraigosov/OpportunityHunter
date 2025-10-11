@@ -1,0 +1,29 @@
+name: Require lraigosov approval on main PRs
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  gate:
+    name: Gate on required review
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    steps:
+      - name: Check required approver
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const requiredUser = 'lraigosov';
+            const { data: reviews } = await github.rest.pulls.listReviews({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+            });
+            const approvals = reviews.filter(r => r.state === 'APPROVED' && r.user?.login === requiredUser);
+            if (approvals.length === 0) {
+              core.setFailed(`La PR a main requiere aprobación de @${requiredUser}.`);
+            } else {
+              core.info(`Aprobación requerida encontrada por @${requiredUser}.`);
+            }
