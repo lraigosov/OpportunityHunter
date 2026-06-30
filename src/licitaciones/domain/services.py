@@ -163,7 +163,7 @@ class TemporalAnalysisService:
                     if len(date_text) == 10 and date_text[4] == '-' and date_text[7] == '-':
                         return date_text
                         
-                except:
+                except (AttributeError, TypeError, ValueError):
                     pass
         
         # Buscar en datos raw
@@ -174,7 +174,7 @@ class TemporalAnalysisService:
                 clean_date = raw_date.split('T')[0]
                 if len(clean_date) == 10 and clean_date[4] == '-' and clean_date[7] == '-':
                     return clean_date
-            except:
+            except (AttributeError, TypeError, ValueError):
                 pass
         
         return None
@@ -211,7 +211,7 @@ class TemporalAnalysisService:
                     period_key = date_obj.strftime('%Y-%m')
                 
                 periods.setdefault(period_key, []).append(tender)
-            except:
+            except (TypeError, ValueError):
                 continue
         
         # Calcular estadísticas por periodo

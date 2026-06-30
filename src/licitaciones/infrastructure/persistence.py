@@ -3,11 +3,9 @@ Infrastructure adapters for data persistence.
 """
 from __future__ import annotations
 import json
-import os
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, Any, List, Optional
-from ..domain.ports import PersistencePort
 
 
 class LocalFilePersistence:

@@ -2,7 +2,7 @@
   "sources": {
     "secop2": {
       "enabled": true,
-      "mode": "offline",
+      "mode": "online",
       "sample_file": "data/samples/secop2_sample.jsonl",
       "endpoint": "https://www.datos.gov.co/resource/p6dx-8zbt.json",
       "limit": 50
@@ -11,14 +11,15 @@
       "enabled": false,
       "mode": "online",
       "sample_file": "data/samples/chilecompra_sample.jsonl",
-      "endpoint": "https://www.mercadopublico.cl/Procurement/Modules/RFB/SearchProcurement.aspx",
+      "endpoint": "https://api.mercadopublico.cl/servicios/v1/publico/licitaciones.json",
+      "ticket_env": "CHILECOMPRA_TICKET",
       "limit": 50
     },
     "compranet": {
-      "enabled": false,
+      "enabled": true,
       "mode": "online",
       "sample_file": "data/samples/compranet_sample.jsonl",
-      "endpoint": "https://datos.gob.mx/busca/api/3/action/package_list",
+      "endpoint": "https://datos.gob.mx/api/3/action/package_search",
       "query": "compranet",
       "limit": 20
     }

@@ -3,27 +3,20 @@ CLI module for the licitaciones platform.
 Provides command-line interface functionality.
 """
 from __future__ import annotations
-import json
+import os
 from pathlib import Path
-import sys
 import time
 import click
 import logging
 from datetime import datetime
 from typing import Optional
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
-
-# Add src to path for imports
-sys.path.append(str((Path(__file__).parent.parent.parent / "src").resolve()))
-
-from src.licitaciones.infrastructure.config_loader import JsonConfigLoader
-from src.licitaciones.infrastructure.repositories import InMemoryTenderRepository
-from src.licitaciones.infrastructure.sources import JsonLinesSource
-from src.licitaciones.infrastructure.notifiers import ConsoleNotifier, FileNotifier
-from src.licitaciones.infrastructure.persistence import LocalFilePersistence
-from src.licitaciones.app.use_cases import (
+from licitaciones.infrastructure.config_loader import JsonConfigLoader
+from licitaciones.infrastructure.repositories import InMemoryTenderRepository
+from licitaciones.infrastructure.sources import JsonLinesSource
+from licitaciones.infrastructure.notifiers import ConsoleNotifier, FileNotifier
+from licitaciones.infrastructure.persistence import LocalFilePersistence
+from licitaciones.app.use_cases import (
     FetchTendersUseCase,
     AnalyzePricesUseCase,
     DetectAnomaliesUseCase,
@@ -32,6 +25,9 @@ from src.licitaciones.app.use_cases import (
     TemporalAnalysisUseCase,
     PersistenceManagementUseCase,
 )
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
 
 
 def run_once(cfg: dict, base_dir: Path, cli_options: Optional[dict] = None) -> None:
@@ -44,7 +40,7 @@ def run_once(cfg: dict, base_dir: Path, cli_options: Optional[dict] = None) -> N
     if src_cfg.get("secop2", {}).get("enabled"):
         mode = src_cfg["secop2"].get("mode", "offline")
         if mode == "online":
-            from src.licitaciones.infrastructure.sources import Secop2SocrataSource
+            from licitaciones.infrastructure.sources import Secop2SocrataSource
             sources.append(Secop2SocrataSource(
                 endpoint=src_cfg["secop2"].get("endpoint", "https://www.datos.gov.co/resource/p6dx-8zbt.json"),
                 country="CO",
@@ -58,10 +54,12 @@ def run_once(cfg: dict, base_dir: Path, cli_options: Optional[dict] = None) -> N
     if src_cfg.get("chilecompra", {}).get("enabled"):
         mode = src_cfg["chilecompra"].get("mode", "offline")
         if mode == "online":
-            from src.licitaciones.infrastructure.sources import ChileCompraAPISource
+            from licitaciones.infrastructure.sources import ChileCompraAPISource
+            ticket_env = src_cfg["chilecompra"].get("ticket_env", "CHILECOMPRA_TICKET")
             sources.append(ChileCompraAPISource(
                 endpoint=src_cfg["chilecompra"].get("endpoint", "https://api.mercadopublico.cl/servicios/v1/publico/licitaciones.json"),
-                country="CL"
+                country="CL",
+                ticket=src_cfg["chilecompra"].get("ticket") or os.getenv(ticket_env)
             ))
         else:
             p = base_dir / Path(src_cfg["chilecompra"].get("sample_file", ""))
@@ -71,7 +69,7 @@ def run_once(cfg: dict, base_dir: Path, cli_options: Optional[dict] = None) -> N
     if src_cfg.get("compranet", {}).get("enabled"):
         mode = src_cfg["compranet"].get("mode", "offline")
         if mode == "online":
-            from src.licitaciones.infrastructure.sources import CompranetMexicoSource
+            from licitaciones.infrastructure.sources import CompranetMexicoSource
             sources.append(CompranetMexicoSource(
                 search_url=src_cfg["compranet"].get("endpoint", "https://datos.gob.mx/busca/api/3/action/package_list"),
                 name="Compranet",
