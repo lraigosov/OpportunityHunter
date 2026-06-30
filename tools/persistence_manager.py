@@ -11,8 +11,8 @@ import json
 # Add project root to path for imports
 sys.path.append(str(Path(__file__).parent.parent.resolve()))
 
-from src.licitaciones.infrastructure.persistence import LocalFilePersistence
-from src.licitaciones.app.use_cases import PersistenceManagementUseCase
+from licitaciones.infrastructure.persistence import LocalFilePersistence
+from licitaciones.app.use_cases import PersistenceManagementUseCase
 
 
 @click.group()

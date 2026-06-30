@@ -68,6 +68,15 @@ python main.py --config config/config.json --enable-persistence
 # Los reportes activos se generan automáticamente en active_opportunities/
 ```
 
+### Ejecución Productiva Recomendada
+```powershell
+# Usa SECOP II y CompraNet en línea con límites controlados
+pwsh -File tools/run_productive.ps1
+
+# Personalizar límites por fuente
+pwsh -File tools/run_productive.ps1 -SecopLimit 200 -CompranetLimit 200
+```
+
 ### Opciones de CLI
 ```bash
 # Todas las opciones disponibles
@@ -165,6 +174,17 @@ Filtra solo oportunidades cuyo deadline no ha vencido:
 ### Configuración de Fuentes
 - **Modo Online**: Conexión directa a APIs gubernamentales
 - **Modo Offline**: Usa archivos de muestra para desarrollo/testing
+
+La configuración base del proyecto ya viene orientada a producción para SECOP II y CompraNet.
+ChileCompra permanece deshabilitada por defecto solo porque su API oficial exige ticket previo.
+
+Para ChileCompra, el modo online usa la API oficial de Mercado Público y requiere un ticket.
+Puedes entregarlo en `sources.chilecompra.ticket` o por variable de entorno `CHILECOMPRA_TICKET`.
+Si no hay ticket configurado, el adaptador omite la carga en línea y no fabrica resultados de muestra.
+
+Para CompraNet, el modo online consume el dataset público real publicado en datos.gob.mx.
+La configuración por defecto resuelve el recurso CSV desde `package_search`; también puedes fijar un CSV directo en `sources.compranet.endpoint`.
+El cliente HTTP intenta usar el almacén de certificados del sistema para mejorar compatibilidad TLS en Windows y entornos corporativos.
 
 ## 🏗️ Arquitectura
 
