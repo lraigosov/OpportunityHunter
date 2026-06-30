@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, List, Iterable, Optional
+from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from ..domain.ports import TenderSourcePort, TenderRepositoryPort, NotifierPort, PersistencePort
 from ..domain.services import AlertService, TrendService, AnomalyService, CollusionService, TemporalAnalysisService
@@ -191,57 +191,19 @@ class GenerateAlertsUseCase:
         
         # Persistir resultados si está habilitado
         if self._persistence:
+            tenders_by_id = {tender.tender_id: tender for tender in tenders if tender.tender_id}
             # Crear reporte detallado de oportunidades encontradas
             opportunities_report = []
             active_opportunities_report = []
+            alert_tenders = []
             
             for alert in alerts:
-                # Buscar la licitación asociada a esta alerta
-                alert_message = alert.message
-                matched_tender = None
-                
-                for tender in tenders:
-                    if (tender.title and tender.title.upper() in alert_message.upper()) or \
-                       (tender.buyer_name and tender.buyer_name.upper() in alert_message.upper()) or \
-                       (tender.tender_id and tender.tender_id in alert_message):
-                        matched_tender = tender
-                        break
+                matched_tender = self._match_tender_for_alert(alert, tenders_by_id, tenders)
                 
                 if matched_tender:
-                    # Crear entrada detallada de oportunidad
-                    opportunity = {
-                        "opportunity_id": f"{matched_tender.source}_{matched_tender.tender_id}",
-                        "alert_level": alert.level,
-                        "alert_message": alert.message,
-                        "tender_details": {
-                            "tender_id": matched_tender.tender_id,
-                            "title": matched_tender.title,
-                            "description": matched_tender.description,
-                            "buyer_name": matched_tender.buyer_name,
-                            "amount": matched_tender.amount,
-                            "currency": matched_tender.currency,
-                            "country": matched_tender.country,
-                            "source": matched_tender.source,
-                            "publish_date": matched_tender.publish_date.isoformat() if matched_tender.publish_date else None,
-                            "deadline": matched_tender.deadline.isoformat() if matched_tender.deadline else None,
-                            "item_code": matched_tender.item_code,
-                            "bidders": [
-                                {
-                                    "name": bidder.name,
-                                    "amount": bidder.amount
-                                } for bidder in matched_tender.bidders
-                            ],
-                            "raw_data": matched_tender.raw
-                        },
-                        "analysis_info": {
-                            "matched_keywords": [kw for kw in filters.get("keywords", []) 
-                                               if kw.lower() in (matched_tender.title + " " + matched_tender.description).lower()],
-                            "amount_in_range": filters.get("min_amount", 0) <= matched_tender.amount <= filters.get("max_amount", float('inf')),
-                            "country_match": matched_tender.country in filters.get("countries", []),
-                            "opportunity_score": self._calculate_opportunity_score(matched_tender, filters)
-                        }
-                    }
+                    opportunity = self._build_opportunity_report_entry(matched_tender, alert, filters)
                     opportunities_report.append(opportunity)
+                    alert_tenders.append(opportunity["tender_details"])
                     
                     # Verificar si la oportunidad está activa (deadline no vencido)
                     if self._is_opportunity_active(matched_tender):
@@ -317,9 +279,11 @@ class GenerateAlertsUseCase:
                     {
                         "level": alert.level,
                         "message": alert.message,
+                        "tender_id": alert.tender_id,
                         "data": alert.data
                     } for alert in alerts
                 ],
+                "alert_tenders": alert_tenders,
                 "tenders_analyzed": len(tenders),
                 "summary_stats": {
                     "total_amount": sum(t.amount for t in tenders if t.amount > 0),
@@ -342,6 +306,67 @@ class GenerateAlertsUseCase:
         for n in self._notifiers:
             n.notify(alerts)
         return alerts
+
+    def _match_tender_for_alert(
+        self,
+        alert: Alert,
+        tenders_by_id: Dict[str, Tender],
+        tenders: List[Tender],
+    ) -> Optional[Tender]:
+        """Resuelve la licitación de una alerta priorizando tender_id y usando texto solo como fallback."""
+        if alert.tender_id and alert.tender_id in tenders_by_id:
+            return tenders_by_id[alert.tender_id]
+
+        alert_message = alert.message.upper()
+        for tender in tenders:
+            if (tender.title and tender.title.upper() in alert_message) or \
+               (tender.buyer_name and tender.buyer_name.upper() in alert_message) or \
+               (tender.tender_id and tender.tender_id in alert.message):
+                return tender
+        return None
+
+    def _build_opportunity_report_entry(
+        self,
+        tender: Tender,
+        alert: Alert,
+        filters: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Construye una entrada de reporte a partir de una licitación y su alerta asociada."""
+        return {
+            "opportunity_id": f"{tender.source}_{tender.tender_id}",
+            "alert_level": alert.level,
+            "alert_message": alert.message,
+            "tender_details": {
+                "tender_id": tender.tender_id,
+                "title": tender.title,
+                "description": tender.description,
+                "buyer_name": tender.buyer_name,
+                "amount": tender.amount,
+                "currency": tender.currency,
+                "country": tender.country,
+                "source": tender.source,
+                "publish_date": tender.publish_date.isoformat() if tender.publish_date else None,
+                "deadline": tender.deadline.isoformat() if tender.deadline else None,
+                "item_code": tender.item_code,
+                "bidders": [
+                    {
+                        "name": bidder.name,
+                        "amount": bidder.amount,
+                    }
+                    for bidder in tender.bidders
+                ],
+                "raw_data": tender.raw,
+            },
+            "analysis_info": {
+                "matched_keywords": [
+                    kw for kw in filters.get("keywords", [])
+                    if kw.lower() in (tender.title + " " + tender.description).lower()
+                ],
+                "amount_in_range": filters.get("min_amount", 0) <= tender.amount <= filters.get("max_amount", float("inf")),
+                "country_match": tender.country in filters.get("countries", []),
+                "opportunity_score": self._calculate_opportunity_score(tender, filters),
+            },
+        }
     
     def _calculate_opportunity_score(self, tender: Tender, filters: Dict[str, Any]) -> float:
         """Calcula un puntaje de oportunidad basado en criterios."""

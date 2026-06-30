@@ -6,3 +6,4 @@ scikit-learn>=1.5,<2
 python-dateutil>=2.9,<3
 click>=8.1,<9
 schedule>=1.2,<2
+truststore>=0.10,<1

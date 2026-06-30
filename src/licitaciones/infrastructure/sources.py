@@ -2,11 +2,60 @@ from __future__ import annotations
 from typing import Iterable, Optional, Dict, Any, List
 from pathlib import Path
 import json
+import csv
 from datetime import datetime
+import time
 from ..domain.models import Tender, Bidder
 import logging
 
+try:
+    import truststore
+    truststore.inject_into_ssl()
+except Exception:
+    truststore = None
+
 logger = logging.getLogger(__name__)
+
+
+def _request_with_retries(
+    url: str,
+    *,
+    params: Optional[Dict[str, Any]] = None,
+    headers: Optional[Dict[str, str]] = None,
+    timeout: int = 30,
+    stream: bool = False,
+    max_attempts: int = 3,
+):
+    import requests
+
+    last_error = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            response = requests.get(
+                url,
+                params=params,
+                headers=headers,
+                timeout=timeout,
+                stream=stream,
+            )
+            response.raise_for_status()
+            return response
+        except Exception as exc:
+            last_error = exc
+            if attempt == max_attempts:
+                break
+            backoff_seconds = 1.5 ** (attempt - 1)
+            logger.warning(
+                "HTTP request failed for %s (attempt %s/%s): %s. Retrying in %.1fs",
+                url,
+                attempt,
+                max_attempts,
+                exc,
+                backoff_seconds,
+            )
+            time.sleep(backoff_seconds)
+
+    raise RuntimeError(f"HTTP request failed for {url}: {last_error}")
 
 
 class JsonLinesSource:
@@ -62,8 +111,6 @@ class Secop2SocrataSource:
         self.name = "SECOP2"
 
     def fetch(self, limit: Optional[int] = None) -> Iterable[Tender]:
-        import requests
-
         params: Dict[str, Any] = {}
         if limit:
             params["$limit"] = limit
@@ -74,8 +121,7 @@ class Secop2SocrataSource:
             
         try:
             logger.info(f"Fetching from SECOP II: {self.endpoint}")
-            resp = requests.get(self.endpoint, params=params, headers=headers, timeout=30)
-            resp.raise_for_status()
+            resp = _request_with_retries(self.endpoint, params=params, headers=headers, timeout=30)
             data = resp.json()
         except Exception as e:
             logger.warning("SECOP II fetch failed: %s", e)
@@ -140,208 +186,254 @@ class Secop2SocrataSource:
 
 
 class ChileCompraAPISource:
-    """Fuente para ChileCompra usando el endpoint de búsqueda público."""
+    """Fuente para ChileCompra usando la API oficial de Mercado Público."""
 
-    def __init__(self, endpoint: str, country: str = "CL") -> None:
-        # Usar endpoint de búsqueda público conocido
-        self.endpoint = "https://www.mercadopublico.cl/PurchaseOrder/Modules/PO/DetailsPurchaseOrder.aspx"
-        self.search_endpoint = "https://www.mercadopublico.cl/Procurement/Modules/RFB/SearchProcurement.aspx"
+    def __init__(self, endpoint: str, country: str = "CL", ticket: Optional[str] = None) -> None:
+        self.endpoint = endpoint
         self.country = country
+        self.ticket = ticket
         self.name = "ChileCompra"
 
     def fetch(self, limit: Optional[int] = None) -> Iterable[Tender]:
-        import requests
-        
-        # ChileCompra requiere scraping web ya que no tiene API pública simple
-        # Implementamos un adaptador que simula datos basado en estructura conocida
-        logger.info(f"Fetching from ChileCompra (web scraping mode): {self.search_endpoint}")
-        
-        # Por ahora generamos datos de muestra realistas para ChileCompra
-        # En producción se podría implementar scraping web o usar API con credenciales
-        sample_data = [
-            {
-                "codigo": "4620-34-L125",
-                "nombre": "Servicios de mantención equipos computacionales",
-                "descripcion": "Mantención preventiva y correctiva de equipos informáticos",
-                "organismo": "Municipalidad de Santiago",
-                "monto": 15000000,
-                "fecha_publicacion": "2025-10-01T09:00:00",
-                "estado": "Publicada"
-            },
-            {
-                "codigo": "4620-35-L126", 
-                "nombre": "Desarrollo de software para gestión municipal",
-                "descripcion": "Sistema web para gestión de trámites ciudadanos",
-                "organismo": "Municipalidad de Valparaíso",
-                "monto": 25000000,
-                "fecha_publicacion": "2025-09-28T14:30:00",
-                "estado": "En evaluación"
-            },
-            {
-                "codigo": "4620-36-L127",
-                "nombre": "Consultoría en transformación digital",
-                "descripcion": "Asesoría para implementación de gobierno digital",
-                "organismo": "Gobierno Regional Metropolitano",
-                "monto": 35000000,
-                "fecha_publicacion": "2025-09-25T11:15:00",
-                "estado": "Adjudicada"
-            }
-        ]
-        
+        if not self.ticket:
+            logger.warning(
+                "ChileCompra online fetch skipped: missing API ticket. "
+                "Configure sources.chilecompra.ticket or CHILECOMPRA_TICKET."
+            )
+            return
+
+        params: Dict[str, Any] = {"ticket": self.ticket}
+        if limit:
+            params["limit"] = limit
+
+        try:
+            logger.info("Fetching from ChileCompra API: %s", self.endpoint)
+            resp = _request_with_retries(self.endpoint, params=params, timeout=30)
+            records = self._extract_records(resp.json())
+        except Exception as e:
+            logger.warning("ChileCompra fetch failed: %s", e)
+            return
+
         count = 0
-        for lic in sample_data:
+        for lic in records:
             if limit and count >= limit:
                 break
-                
-            try:
-                t_id = f"CL-{lic['codigo']}"
-                title = lic["nombre"]
-                desc = lic["descripcion"]
-                buyer = lic["organismo"]
-                amount = float(lic["monto"])
-                
-                # Fecha de publicación
-                publish_date = None
-                if lic.get("fecha_publicacion"):
-                    try:
-                        publish_date = datetime.fromisoformat(lic["fecha_publicacion"]).date()
-                    except Exception:
-                        publish_date = None
 
-                yield Tender(
-                    source=self.name,
-                    country=self.country,
-                    tender_id=t_id,
-                    title=title,
-                    description=desc,
-                    buyer_name=buyer,
-                    item_code="72000000",  # Servicios de TI genérico
-                    currency="CLP",
-                    amount=amount,
-                    publish_date=publish_date,
-                    bidders=[],  # Sin ofertas detalladas en modo público
-                    raw=lic,
-                )
-                count += 1
-            except Exception as e:
-                logger.warning(f"Error processing ChileCompra tender: {e}")
+            tender = self._build_tender(lic)
+            if tender is None:
                 continue
+            yield tender
+            count += 1
+
+    def _extract_records(self, payload: Any) -> List[Dict[str, Any]]:
+        if isinstance(payload, list):
+            return [row for row in payload if isinstance(row, dict)]
+
+        if not isinstance(payload, dict):
+            return []
+
+        for key in ("Listado", "listaLicitaciones", "items", "Items", "results", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return [row for row in value if isinstance(row, dict)]
+
+        return []
+
+    def _build_tender(self, lic: Dict[str, Any]) -> Optional[Tender]:
+        try:
+            tender_id = str(
+                lic.get("CodigoExterno")
+                or lic.get("codigoExterno")
+                or lic.get("Codigo")
+                or lic.get("codigo")
+                or lic.get("tender_id")
+                or ""
+            ).strip()
+            if not tender_id:
+                return None
+
+            title = str(lic.get("Nombre") or lic.get("nombre") or lic.get("title") or "")
+            description = str(lic.get("Descripcion") or lic.get("descripcion") or lic.get("description") or title)
+            buyer_name = str(lic.get("NombreOrganismo") or lic.get("nombreOrganismo") or lic.get("buyer_name") or "")
+            item_code = lic.get("CodigoCategoria") or lic.get("codigoCategoria") or lic.get("item_code")
+            currency = str(lic.get("Moneda") or lic.get("moneda") or lic.get("currency") or "CLP")
+            amount = self._to_float(
+                lic.get("MontoEstimado")
+                or lic.get("montoEstimado")
+                or lic.get("MontoTotal")
+                or lic.get("montoTotal")
+                or lic.get("amount")
+                or 0
+            )
+
+            publish_date = self._parse_date(
+                lic.get("FechaCreacion")
+                or lic.get("fechaCreacion")
+                or lic.get("FechaPublicacion")
+                or lic.get("fechaPublicacion")
+                or lic.get("publish_date")
+            )
+            deadline = self._parse_date(
+                lic.get("FechaCierre")
+                or lic.get("fechaCierre")
+                or lic.get("deadline")
+            )
+
+            return Tender(
+                source=self.name,
+                country=self.country,
+                tender_id=f"CL-{tender_id}",
+                title=title,
+                description=description,
+                buyer_name=buyer_name,
+                item_code=item_code,
+                currency=currency,
+                amount=amount,
+                publish_date=publish_date,
+                deadline=deadline,
+                bidders=[],
+                raw=lic,
+            )
+        except Exception as e:
+            logger.warning("Error processing ChileCompra tender: %s", e)
+            return None
+
+    def _parse_date(self, value: Any) -> Optional[datetime.date]:
+        if not value:
+            return None
+
+        text = str(value).strip()
+        candidates = [text, text.replace("Z", "+00:00")]
+        if "T" in text:
+            candidates.append(text.split("T")[0])
+
+        for candidate in candidates:
+            try:
+                return datetime.fromisoformat(candidate).date()
+            except ValueError:
+                continue
+
+        return None
+
+    def _to_float(self, value: Any) -> float:
+        try:
+            return float(str(value).replace(",", ""))
+        except (TypeError, ValueError):
+            return 0.0
 
 
 class CompranetMexicoSource:
-    """Fuente para Compranet México usando datos.gob.mx y simulación de datos."""
+    """Fuente productiva para CompraNet usando datasets públicos de datos.gob.mx."""
 
     def __init__(self, search_url: str, name: str, country: str, query: str = "") -> None:
-        # Endpoint correcto para datos de gobierno mexicano
-        self.search_url = "https://datos.gob.mx/busca/api/3/action/package_list"
+        self.search_url = search_url
         self.name = name
         self.country = country
         self.query = query
 
     def fetch(self, limit: Optional[int] = None) -> Iterable[Tender]:
-        import requests
-
         try:
-            logger.info(f"Fetching from Compranet México: {self.search_url}")
-            resp = requests.get(self.search_url, timeout=30)
-            resp.raise_for_status()
-            data = resp.json()
-        except Exception as e:
-            logger.warning("Compranet fetch failed, usando datos de muestra: %s", e)
-            # Usar datos de muestra realistas para Compranet
-            return self._generate_sample_data(limit)
-            
-        # Los datos de package_list son solo nombres, generamos datos de muestra más realistas
-        return self._generate_sample_data(limit)
+            csv_url = self._resolve_csv_resource_url(limit)
+            if not csv_url:
+                logger.warning("Compranet fetch skipped: no CSV resource found for query '%s'", self.query)
+                return
 
-    def _generate_sample_data(self, limit: Optional[int] = None) -> Iterable[Tender]:
-        """Genera datos de muestra realistas para Compranet México."""
-        sample_data = [
-            {
-                "numero_proceso": "AA-006000999-E58-2025",
-                "titulo": "Servicios de desarrollo de sistema integral de nómina",
-                "descripcion": "Desarrollo, implementación y puesta en marcha de sistema de nómina para dependencias federales",
-                "dependencia": "Secretaría de Hacienda y Crédito Público",
-                "monto": 12500000.0,
-                "fecha_publicacion": "2025-09-15T10:00:00",
-                "estatus": "En proceso"
-            },
-            {
-                "numero_proceso": "AA-006000999-E59-2025",
-                "titulo": "Consultoría en seguridad informática y ciberseguridad",
-                "descripcion": "Servicios especializados en evaluación y fortalecimiento de seguridad informática",
-                "dependencia": "Instituto Nacional de Transparencia",
-                "monto": 8750000.0,
-                "fecha_publicacion": "2025-09-12T14:30:00",
-                "estatus": "Publicado"
-            },
-            {
-                "numero_proceso": "AA-006000999-E60-2025",
-                "titulo": "Servicios de soporte técnico especializado en TI",
-                "descripcion": "Mantenimiento preventivo y correctivo de infraestructura tecnológica",
-                "dependencia": "Comisión Federal de Electricidad",
-                "monto": 15300000.0,
-                "fecha_publicacion": "2025-09-08T09:15:00",
-                "estatus": "En evaluación"
-            },
-            {
-                "numero_proceso": "AA-006000999-E61-2025", 
-                "titulo": "Desarrollo de plataforma web para trámites ciudadanos",
-                "descripcion": "Sistema web responsivo para digitalización de servicios gubernamentales",
-                "dependencia": "Gobierno de la Ciudad de México",
-                "monto": 22800000.0,
-                "fecha_publicacion": "2025-09-05T16:45:00",
-                "estatus": "Adjudicado"
-            },
-            {
-                "numero_proceso": "AA-006000999-E62-2025",
-                "titulo": "Consultoría en transformación digital gubernamental",
-                "descripcion": "Asesoría especializada para modernización de procesos administrativos digitales",
-                "dependencia": "Secretaría de la Función Pública",
-                "monto": 18950000.0,
-                "fecha_publicacion": "2025-09-01T11:20:00",
-                "estatus": "En proceso"
-            }
-        ]
-        
+            logger.info("Fetching from Compranet México: %s", csv_url)
+            resp = _request_with_retries(csv_url, stream=True, timeout=60)
+        except Exception as e:
+            logger.warning("Compranet fetch failed: %s", e)
+            return
+
+        lines = resp.iter_lines(decode_unicode=True)
+        reader = csv.DictReader(lines)
         count = 0
-        for proc in sample_data:
+        for row in reader:
             if limit and count >= limit:
                 break
-                
-            try:
-                t_id = f"MX-{proc['numero_proceso']}"
-                title = proc["titulo"]
-                desc = proc["descripcion"]
-                buyer = proc["dependencia"]
-                amount = float(proc["monto"])
-                
-                # Fecha de publicación
-                publish_date = None
-                if proc.get("fecha_publicacion"):
-                    try:
-                        publish_date = datetime.fromisoformat(proc["fecha_publicacion"]).date()
-                    except Exception:
-                        publish_date = None
 
-                yield Tender(
-                    source=self.name,
-                    country=self.country,
-                    tender_id=t_id,
-                    title=title,
-                    description=desc,
-                    buyer_name=buyer,
-                    item_code="80000000",  # Servicios empresariales genérico
-                    currency="MXN",
-                    amount=amount,
-                    publish_date=publish_date,
-                    bidders=[],  # Sin ofertas detalladas en datos públicos
-                    raw=proc,
-                )
-                count += 1
-            except Exception as e:
-                logger.warning(f"Error processing Compranet tender: {e}")
+            tender = self._build_tender_from_csv_row(row)
+            if tender is None:
                 continue
+
+            yield tender
+            count += 1
+
+    def _resolve_csv_resource_url(self, limit: Optional[int] = None) -> Optional[str]:
+        if self.search_url.lower().endswith(".csv"):
+            return self.search_url
+
+        params: Dict[str, Any] = {"q": self.query or "compranet", "rows": max(limit or 10, 10)}
+        response = _request_with_retries(self.search_url, params=params, timeout=30)
+        payload = response.json()
+
+        results = payload.get("result", {}).get("results", []) if isinstance(payload, dict) else []
+        for dataset in results:
+            for resource in dataset.get("resources", []):
+                resource_url = resource.get("url")
+                resource_format = str(resource.get("format") or "").upper()
+                if resource_url and (resource_format == "CSV" or str(resource_url).lower().endswith(".csv")):
+                    return str(resource_url)
+
+        return None
+
+    def _build_tender_from_csv_row(self, row: Dict[str, Any]) -> Optional[Tender]:
+        tender_id = str(row.get("project_code") or row.get("codigo_expediente") or row.get("codigo_contrato") or "").strip()
+        if not tender_id:
+            return None
+
+        title = str(row.get("titulo_contrato") or "").strip()
+        description = str(row.get("descripcion_contrato") or title).strip()
+        buyer_name = str(
+            row.get("dependencia")
+            or row.get("unidad_compradora")
+            or row.get("comprador")
+            or "No disponible en dataset historico"
+        ).strip()
+        currency = str(row.get("moneda") or "MXN").strip() or "MXN"
+        amount = self._to_float(row.get("importe"))
+        publish_date = self._parse_datetime_to_date(row.get("fecha_inicio") or row.get("ff_fecha_inicio"))
+        deadline = self._parse_datetime_to_date(row.get("fecha_fin") or row.get("ff_fecha_fin"))
+
+        return Tender(
+            source=self.name,
+            country=self.country,
+            tender_id=f"MX-{tender_id}",
+            title=title,
+            description=description,
+            buyer_name=buyer_name,
+            item_code=str(row.get("work_category_id") or "").strip() or None,
+            currency=currency,
+            amount=amount,
+            publish_date=publish_date,
+            deadline=deadline,
+            bidders=[],
+            raw=row,
+        )
+
+    def _parse_datetime_to_date(self, value: Any) -> Optional[datetime.date]:
+        if not value:
+            return None
+
+        text = str(value).strip()
+        candidates = [text, text.replace("Z", "+00:00")]
+        if "." in text and "+" in text:
+            candidates.append(text.split(".")[0])
+        if " " in text:
+            candidates.append(text.split(" ")[0])
+
+        for candidate in candidates:
+            try:
+                return datetime.fromisoformat(candidate).date()
+            except ValueError:
+                continue
+
+        return None
+
+    def _to_float(self, value: Any) -> float:
+        try:
+            return float(str(value).replace(",", ""))
+        except (TypeError, ValueError):
+            return 0.0
 
 
 class CKANPackageSearchSource:
@@ -354,16 +446,13 @@ class CKANPackageSearchSource:
         self.query = query
 
     def fetch(self, limit: Optional[int] = None) -> Iterable[Tender]:
-        import requests
-
         params: Dict[str, Any] = {"rows": limit or 50}
         if self.query:
             params["q"] = self.query
             
         try:
             logger.info(f"Fetching from CKAN: {self.search_url} with params: {params}")
-            resp = requests.get(self.search_url, params=params, timeout=30)
-            resp.raise_for_status()
+            resp = _request_with_retries(self.search_url, params=params, timeout=30)
             data = resp.json()
         except Exception as e:
             logger.warning("CKAN fetch failed: %s", e)
