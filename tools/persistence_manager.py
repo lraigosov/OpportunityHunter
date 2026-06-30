@@ -55,7 +55,6 @@ def history(directory: str, limit: int, type: str):
         
         # Extraer información clave de los datos
         data = record.get('data', {})
-        metadata = record.get('metadata', {})
         
         summary = ""
         if exec_type == "alerts":
@@ -76,7 +75,7 @@ def history(directory: str, limit: int, type: str):
             total_count = data.get('execution_summary', {}).get('total_opportunities_analyzed', 0)
             summary = f"{active_count}/{total_count} activas"
         elif exec_type == "full_execution":
-            summary = f"Resumen completo"
+            summary = "Resumen completo"
         
         click.echo(f"{i:2d}. {timestamp} | {exec_type:15s} | {summary:20s} | {file_size:,} bytes | {file_path}")
 
@@ -150,7 +149,7 @@ def cleanup(directory: str, days: int, dry_run: bool):
             click.echo("  No hay archivos para eliminar.")
         else:
             click.echo(f"\nTotal: {count} archivos, {total_size:,} bytes ({total_size/1024/1024:.2f} MB)")
-            click.echo(f"Ejecute sin --dry-run para eliminar realmente.")
+            click.echo("Ejecute sin --dry-run para eliminar realmente.")
     else:
         deleted_count = persistence.cleanup_old_files(days)
         if deleted_count > 0:

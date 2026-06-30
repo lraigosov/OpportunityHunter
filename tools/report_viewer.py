@@ -8,7 +8,7 @@ import sys
 import json
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, Optional
 import click
 
 # Add project root to path for imports
@@ -30,7 +30,7 @@ def format_datetime(timestamp_str: str) -> str:
     try:
         dt = datetime.fromisoformat(timestamp_str)
         return dt.strftime("%Y-%m-%d %H:%M:%S")
-    except:
+    except (TypeError, ValueError):
         return timestamp_str
 
 
@@ -39,7 +39,7 @@ def display_alert_report(data: Dict[str, Any]) -> None:
     execution_data = data.get("data", {})
     metadata = data.get("metadata", {})
     
-    click.echo(f"📊 REPORTE DE ALERTAS")
+    click.echo("📊 REPORTE DE ALERTAS")
     click.echo(f"⏰ Timestamp: {format_datetime(data.get('timestamp', ''))}")
     click.echo(f"🔍 Filtros aplicados: {len(metadata.get('filters', {}).get('keywords', []))} keywords")
     click.echo(f"🌎 Países: {', '.join(metadata.get('filters', {}).get('countries', []))}")
@@ -47,7 +47,7 @@ def display_alert_report(data: Dict[str, Any]) -> None:
     
     # Estadísticas generales
     stats = execution_data.get("summary_stats", {})
-    click.echo(f"📈 ESTADÍSTICAS GENERALES:")
+    click.echo("📈 ESTADÍSTICAS GENERALES:")
     click.echo(f"  • Total licitaciones analizadas: {execution_data.get('tenders_analyzed', 0)}")
     click.echo(f"  • Alertas generadas: {execution_data.get('alerts_count', 0)}")
     click.echo(f"  • Valor total: {format_currency(stats.get('total_amount', 0))}")
@@ -82,15 +82,14 @@ def display_alert_report(data: Dict[str, Any]) -> None:
 def display_full_execution_report(data: Dict[str, Any]) -> None:
     """Muestra reporte completo de ejecución."""
     execution_data = data.get("data", {})
-    metadata = data.get("metadata", {})
     
-    click.echo(f"🎯 REPORTE COMPLETO DE EJECUCIÓN")
+    click.echo("🎯 REPORTE COMPLETO DE EJECUCIÓN")
     click.echo(f"⏰ Timestamp: {format_datetime(data.get('timestamp', ''))}")
     click.echo("=" * 60)
     
     # Estadísticas de ejecución
     exec_stats = execution_data.get("execution_stats", {})
-    click.echo(f"📊 RESULTADOS DE ANÁLISIS:")
+    click.echo("📊 RESULTADOS DE ANÁLISIS:")
     click.echo(f"  • Alertas generadas: {exec_stats.get('alerts_count', 0)}")
     click.echo(f"  • Grupos de tendencias: {exec_stats.get('trends_count', 0)}")
     click.echo(f"  • Anomalías detectadas: {exec_stats.get('anomalies_count', 0)}")
@@ -101,7 +100,7 @@ def display_full_execution_report(data: Dict[str, Any]) -> None:
     # Resumen de datos
     data_summary = execution_data.get("data_summary", {})
     if data_summary:
-        click.echo(f"📈 RESUMEN DE DATOS:")
+        click.echo("📈 RESUMEN DE DATOS:")
         click.echo(f"  • Países: {', '.join(data_summary.get('countries', []))}")
         click.echo(f"  • Fuentes: {', '.join(data_summary.get('sources', []))}")
         click.echo(f"  • Valor total: {format_currency(data_summary.get('total_amount', 0))}")
@@ -116,7 +115,7 @@ def display_full_execution_report(data: Dict[str, Any]) -> None:
     temporal = execution_data.get("temporal_analysis")
     if temporal and temporal.get("summary"):
         temp_summary = temporal["summary"]
-        click.echo(f"📅 ANÁLISIS TEMPORAL:")
+        click.echo("📅 ANÁLISIS TEMPORAL:")
         click.echo(f"  • Períodos analizados: {temp_summary.get('total_periods', 0)}")
         click.echo(f"  • Licitaciones en rango: {temp_summary.get('total_tenders', 0)}")
         date_range = temp_summary.get('date_range', {})
@@ -127,7 +126,7 @@ def display_full_execution_report(data: Dict[str, Any]) -> None:
     # Muestras de alertas
     alert_samples = execution_data.get("alert_samples", [])
     if alert_samples:
-        click.echo(f"🚨 MUESTRA DE ALERTAS:")
+        click.echo("🚨 MUESTRA DE ALERTAS:")
         for alert in alert_samples[:5]:
             level_icon = {"info": "ℹ️", "warning": "⚠️", "critical": "🚨"}.get(alert.get("level", "info"), "•")
             click.echo(f"  {level_icon} {alert.get('message', 'Sin mensaje')}")
@@ -163,13 +162,13 @@ def main(report_type: str, limit: int, detailed: bool, persistence_dir: Optional
     # Mostrar estadísticas generales
     if hasattr(persistence, 'get_statistics'):
         stats = persistence.get_statistics()
-        click.echo(f"📊 ESTADÍSTICAS DE PERSISTENCIA:")
+        click.echo("📊 ESTADÍSTICAS DE PERSISTENCIA:")
         click.echo(f"  • Total archivos: {stats.get('total_files', 0)}")
         click.echo(f"  • Tamaño total: {stats.get('total_size_bytes', 0) / 1024:.1f} KB")
         
         by_type = stats.get('by_type', {})
         if by_type:
-            click.echo(f"  • Por tipo:")
+            click.echo("  • Por tipo:")
             for exec_type, type_stats in by_type.items():
                 if type_stats['count'] > 0:
                     click.echo(f"    - {exec_type}: {type_stats['count']} archivos ({type_stats['size_bytes'] / 1024:.1f} KB)")

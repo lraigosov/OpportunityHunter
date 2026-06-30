@@ -1,5 +1,5 @@
 from __future__ import annotations
-from typing import Dict, Any, List, Iterable, Optional
+from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from ..domain.ports import TenderSourcePort, TenderRepositoryPort, NotifierPort, PersistencePort
 from ..domain.services import AlertService, TrendService, AnomalyService, CollusionService, TemporalAnalysisService

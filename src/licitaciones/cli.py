@@ -3,7 +3,6 @@ CLI module for the licitaciones platform.
 Provides command-line interface functionality.
 """
 from __future__ import annotations
-import json
 import os
 from pathlib import Path
 import time
@@ -11,9 +10,6 @@ import click
 import logging
 from datetime import datetime
 from typing import Optional
-
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
 
 from licitaciones.infrastructure.config_loader import JsonConfigLoader
 from licitaciones.infrastructure.repositories import InMemoryTenderRepository
@@ -29,6 +25,9 @@ from licitaciones.app.use_cases import (
     TemporalAnalysisUseCase,
     PersistenceManagementUseCase,
 )
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s - %(name)s - %(message)s')
 
 
 def run_once(cfg: dict, base_dir: Path, cli_options: Optional[dict] = None) -> None:
