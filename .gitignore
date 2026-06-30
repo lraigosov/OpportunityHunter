@@ -81,3 +81,5 @@ logs/
 # Config files with sensitive data (keep template)
 config/config.local.json
 config/config.prod.json
+# Internal dev log
+/devlog.md
