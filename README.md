@@ -202,6 +202,132 @@ src/licitaciones/
 - **Adapters**: Implementaciones concretas (APIs, persistencia)
 - **Services**: Servicios de dominio especializados
 
+### Diagrama de Solución
+
+```mermaid
+flowchart TD
+  CLI[CLI main.py y licitaciones.cli]
+  CFG[config.json y opciones CLI]
+
+  subgraph Sources[Fuentes de datos]
+    SECOP[SECOP II Socrata online]
+    CHILE[ChileCompra API online con ticket]
+    COMPRANET[CompraNet dataset publico]
+    OFFLINE[JSON Lines offline]
+  end
+
+  subgraph Core[Core hexagonal]
+    REPO[InMemoryTenderRepository]
+    FETCH[FetchTendersUseCase]
+    ALERTS[GenerateAlertsUseCase]
+    TRENDS[AnalyzePricesUseCase]
+    ANOMALIES[DetectAnomaliesUseCase]
+    COLLUSION[DetectCollusionUseCase]
+    TEMPORAL[TemporalAnalysisUseCase]
+    DOMAIN[Domain Services]
+  end
+
+  subgraph Outputs[Salidas]
+    CONSOLE[ConsoleNotifier]
+    FILELOG[FileNotifier]
+    PERSIST[LocalFilePersistence]
+    REPORTS[JSON de ejecucion y reportes]
+  end
+
+  CFG --> CLI
+  CLI --> FETCH
+  SECOP --> FETCH
+  CHILE --> FETCH
+  COMPRANET --> FETCH
+  OFFLINE --> FETCH
+  FETCH --> REPO
+  REPO --> ALERTS
+  REPO --> TRENDS
+  REPO --> ANOMALIES
+  REPO --> COLLUSION
+  REPO --> TEMPORAL
+  ALERTS --> DOMAIN
+  TRENDS --> DOMAIN
+  ANOMALIES --> DOMAIN
+  COLLUSION --> DOMAIN
+  TEMPORAL --> DOMAIN
+  ALERTS --> CONSOLE
+  ALERTS --> FILELOG
+  ALERTS --> PERSIST
+  TRENDS --> PERSIST
+  ANOMALIES --> PERSIST
+  COLLUSION --> PERSIST
+  TEMPORAL --> PERSIST
+  PERSIST --> REPORTS
+```
+
+### Flujo de Datos de una Ejecución
+
+```mermaid
+sequenceDiagram
+  participant User as Usuario
+  participant CLI as CLI
+  participant Sources as Sources
+  participant Repo as InMemoryTenderRepository
+  participant UC as Use Cases
+  participant Persist as LocalFilePersistence
+  participant Notify as Notifiers
+
+  User->>CLI: Ejecuta main.py con config y flags
+  CLI->>CLI: Carga config y aplica overrides
+  CLI->>Sources: Construye adaptadores habilitados
+  Sources-->>CLI: Instancias online u offline
+  CLI->>UC: Ejecuta FetchTendersUseCase
+  UC->>Sources: fetch por cada fuente
+  Sources-->>UC: Tenders normalizados
+  UC->>Repo: save_all
+  CLI->>UC: Ejecuta alertas, tendencias, anomalias, colusion y temporal
+  UC->>Repo: query con filtros
+  Repo-->>UC: Tenders filtrados
+  UC->>Notify: Emite alertas configuradas
+  UC->>Persist: Guarda alerts, trends, anomalies y collusion
+  CLI->>Persist: Guarda full_execution
+  Persist-->>User: JSON por tipo en data/executions
+```
+
+### Mapa de Persistencia y Reportes
+
+```mermaid
+flowchart LR
+  RUN[Ejecucion del pipeline]
+  ALERTS[alerts]
+  TRENDS[trends]
+  ANOMALIES[anomalies]
+  COLLUSION[collusion]
+  TEMPORAL[temporal_analysis]
+  OPP[opportunities_report]
+  ACTIVE[active_opportunities]
+  FULL[full_execution]
+
+  RUN --> ALERTS
+  RUN --> TRENDS
+  RUN --> ANOMALIES
+  RUN --> COLLUSION
+  RUN --> TEMPORAL
+  RUN --> OPP
+  RUN --> ACTIVE
+  RUN --> FULL
+
+  ALERTS --> DIR[data/executions]
+  TRENDS --> DIR
+  ANOMALIES --> DIR
+  COLLUSION --> DIR
+  TEMPORAL --> DIR
+  OPP --> DIR
+  ACTIVE --> DIR
+  FULL --> DIR
+```
+
+Estos diagramas reflejan el comportamiento actual del código:
+- SECOP II y CompraNet están activos por defecto en modo online.
+- ChileCompra usa API oficial, pero requiere ticket y por eso suele permanecer deshabilitada en la configuración base.
+- La persistencia escribe archivos JSON separados por tipo de ejecución dentro de `data/executions`.
+
 ## 🔧 Desarrollo
 
 ### Ejecutar Tests
